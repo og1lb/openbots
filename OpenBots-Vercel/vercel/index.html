@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenBots</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0b0b;color:#f4f4f4;font-family:Inter,Arial,sans-serif}header{height:72px;border-bottom:1px solid #242424;display:flex;align-items:center;justify-content:space-between;padding:0 28px}.logo{font-weight:800;font-size:24px}.muted{color:#858585}.wrap{max-width:1200px;margin:0 auto;padding:28px}.top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:24px}button{border:0;border-radius:10px;padding:11px 15px;background:#fff;color:#080808;font-weight:700;cursor:pointer}button.secondary{background:#1c1c1c;color:#fff;border:1px solid #303030}button.danger{background:#421919;color:#ffb0b0;border:1px solid #6a2929}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px}.dropzone{border:1px dashed #555;background:#0f0f0f;border-radius:18px;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;margin-bottom:14px;transition:.15s}.dropzone.drag{border-color:#fff;background:#171717;transform:scale(1.01)}.dropicon{font-size:38px}.uploadstatus{color:#aaa;min-height:42px;margin:0 0 16px;display:flex;align-items:center}.progress{width:100%;height:6px;background:#222;border-radius:99px;overflow:hidden;display:none}.progress>i{display:block;height:100%;width:0;background:#fff;transition:width .2s}.card{background:#111;border:1px solid #262626;border-radius:16px;padding:18px}.card h3{margin:0 0 7px}.status{font-size:12px;margin-bottom:16px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#777;margin-right:7px}.dot.on{background:#fff}.actions{display:flex;flex-wrap:wrap;gap:8px}.modal{position:fixed;inset:0;background:#000b;display:none;align-items:center;justify-content:center;padding:20px}.modal.show{display:flex}.box{width:min(800px,100%);background:#111;border:1px solid #303030;border-radius:18px;padding:20px}input,textarea{width:100%;background:#080808;color:#fff;border:1px solid #303030;border-radius:10px;padding:12px;font:inherit}textarea{min-height:260px;resize:vertical;font-family:Consolas,monospace}.row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}.logs{background:#070707;border:1px solid #242424;border-radius:10px;padding:12px;height:280px;overflow:auto;white-space:pre-wrap;font:12px Consolas,monospace}.toast{position:fixed;right:20px;bottom:20px;background:#fff;color:#000;padding:13px 16px;border-radius:10px;display:none;font-weight:700;z-index:20}small{color:#777}.hint{font-size:13px;color:#777;text-align:center;max-width:650px;line-height:1.5}
+</style>
+</head>
+<body>
+<header><div class="logo">OpenBots</div><div class="muted">Local Bot Deployment</div></header>
+<div class="wrap">
+  <div class="top"><div><h1 style="margin:0">Bots</h1><div class="muted">Import complete bot folders, edit .env, install dependencies and deploy.</div></div><button class="secondary" onclick="settings()">Runner Settings</button></div>
+  <div id="dropzone" class="dropzone">
+    <div class="dropicon">↑</div><div><strong>Drop bot folders here</strong></div>
+    <div class="muted">or click to open the Windows folder picker</div>
+    <div class="hint">You can also drop multiple folders. package.json, src/, node_modules exclusion and .env are handled automatically.</div>
+    <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
+  </div>
+  <div id="progress" class="progress"><i></i></div>
+  <div id="uploadStatus" class="uploadstatus"></div>
+  <div id="grid" class="grid"></div>
+</div>
+<div id="modal" class="modal"><div class="box">
+  <div class="top" style="margin-bottom:12px"><h2 id="modalTitle" style="margin:0">Bot</h2><button class="secondary" onclick="closeModal()">Close</button></div>
+  <textarea id="env"></textarea>
+  <div class="row"><button onclick="saveEnv()">Save .env</button><button class="secondary" onclick="deployCurrent()">Deploy</button><button class="secondary" onclick="restartCurrent()">Restart</button></div>
+  <h3>Live logs</h3><div id="logs" class="logs">No logs yet.</div>
+</div></div>
+<div id="settingsModal" class="modal"><div class="box"><div class="top" style="margin-bottom:12px"><h2 style="margin:0">Runner Settings</h2><button class="secondary" onclick="closeSettings()">Close</button></div><div class="muted" style="margin-bottom:8px">Enter the public URL of your always-on OpenBots Runner and its access key.</div><input id="runnerUrl" placeholder="https://your-runner.example.com"><div style="height:10px"></div><input id="runnerKey" type="password" placeholder="OPENBOTS_TOKEN"><div class="row"><button onclick="saveSettings()">Save</button><button class="secondary" onclick="testRunner()">Test Connection</button></div></div></div><div id="toast" class="toast"></div>
+<script>
+let bots=[],current=null,timer=null;
+const $=id=>document.getElementById(id);
+function toast(s){$("toast").textContent=s;$("toast").style.display="block";setTimeout(()=>$("toast").style.display="none",2500)}
+function runner(){return (localStorage.getItem("openbots_runner_url")||"").replace(/\/$/,"")}
+function runnerKey(){return localStorage.getItem("openbots_runner_key")||""}
+async function api(url,opt={}){const base=runner();if(!base)throw new Error("Open Runner URL first: click Runner Settings.");const headers={...(opt.body instanceof FormData?{}:{"Content-Type":"application/json"}),"Authorization":"Bearer "+runnerKey(),...(opt.headers||{})};const r=await fetch(base+url,{...opt,headers});let d={};try{d=await r.json()}catch{}if(!r.ok||!d.ok)throw new Error(d.error||`Request failed (${r.status})`);return d}
+function settings(){document.getElementById("settingsModal").classList.add("show");document.getElementById("runnerUrl").value=runner();document.getElementById("runnerKey").value=runnerKey()}
+function closeSettings(){document.getElementById("settingsModal").classList.remove("show")}
+function saveSettings(){localStorage.setItem("openbots_runner_url",document.getElementById("runnerUrl").value.trim().replace(/\/$/,""));localStorage.setItem("openbots_runner_key",document.getElementById("runnerKey").value.trim());closeSettings();toast("Runner settings saved");load()}
+async function testRunner(){try{const u=document.getElementById("runnerUrl").value.trim().replace(/\/$/,"");const k=document.getElementById("runnerKey").value.trim();const r=await fetch(u+"/api/bots",{headers:{Authorization:"Bearer "+k}});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||"Connection failed");toast("Runner connection works ✓")}catch(e){alert(e.message)}}
+const dropzone=$("dropzone"),folderInput=$("folderInput"),uploadStatus=$("uploadStatus"),progress=$("progress"),progressBar=progress.querySelector("i");
+
+dropzone.addEventListener("click",async e=>{if(e.target===folderInput)return;try{if(window.showDirectoryPicker){const dir=await window.showDirectoryPicker({mode:"read"});const files=[];await collectDirectory(dir,dir.name,files);if(files.length)await uploadFiles(files);return}}catch(err){if(err?.name==="AbortError")return;console.warn(err)}folderInput.click()});
+folderInput.addEventListener("change",async()=>{if(folderInput.files.length)await uploadFiles([...folderInput.files]);folderInput.value=""});
+["dragenter","dragover"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add("drag")}));
+["dragleave","drop"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove("drag")}));
+dropzone.addEventListener("drop",async e=>{const files=[];for(const item of [...e.dataTransfer.items]){const entry=item.webkitGetAsEntry?.();if(entry)await readEntry(entry,files)}if(files.length)await uploadFiles(files)});
+async function collectDirectory(handle,prefix,out){for await(const [name,h] of handle.entries()){if(name==="node_modules"||name===".git")continue;const p=prefix+"/"+name;if(h.kind==="file"){const f=await h.getFile();Object.defineProperty(f,"webkitRelativePath",{value:p,configurable:true});out.push(f)}else await collectDirectory(h,p,out)}}
+async function readEntry(entry,out){if(entry.isFile){await new Promise(resolve=>entry.file(f=>{try{Object.defineProperty(f,"webkitRelativePath",{value:entry.fullPath.replace(/^\//,""),configurable:true})}catch{}if(!f.webkitRelativePath.includes("/node_modules/")&&!f.webkitRelativePath.includes("/.git/"))out.push(f);resolve()}));return}if(entry.isDirectory){if(entry.name==="node_modules"||entry.name===".git")return;const reader=entry.createReader();while(true){const batch=await new Promise(resolve=>reader.readEntries(resolve));if(!batch.length)break;for(const child of batch)await readEntry(child,out)}}}
+async function uploadFiles(files){
+  if(!files.length)return;
+  const items=files.map((file,i)=>({file, path:(file.webkitRelativePath||file.name).replace(/\\/g,"/").replace(/^\/+/,"")}));
+  const valid=items.filter(x=>x.path && !x.path.split("/").some(p=>p==="."||p===".."));
+  if(!valid.length){uploadStatus.textContent="No valid files found.";return}
+  uploadStatus.textContent=`Uploading complete folder (${valid.length} file(s))...`;
+  progress.style.display="block";progressBar.style.width="2%";
+  const form=new FormData();
+  form.append("manifest",JSON.stringify(valid.map(x=>x.path)));
+  for(const x of valid) form.append("files",x.file,x.file.name);
+  try{
+    const result=await new Promise((resolve,reject)=>{
+      const xhr=new XMLHttpRequest();
+      xhr.open("POST",runner()+"/api/upload-folder");
+      xhr.setRequestHeader("Authorization","Bearer "+runnerKey());
+      xhr.upload.onprogress=e=>{if(e.lengthComputable)progressBar.style.width=Math.max(2,Math.round(e.loaded/e.total*100))+"%"};
+      xhr.onload=()=>{try{const d=JSON.parse(xhr.responseText);if(xhr.status>=200&&xhr.status<300&&d.ok)resolve(d);else reject(new Error(d.error||"Upload failed"))}catch{reject(new Error("Invalid server response"))}};
+      xhr.onerror=()=>reject(new Error("Upload connection failed"));
+      xhr.send(form);
+    });
+    progressBar.style.width="100%";uploadStatus.textContent=`✓ ${result.message}`;toast("Complete bot folder added");await load();setTimeout(()=>progress.style.display="none",500)
+  }catch(e){progress.style.display="none";uploadStatus.textContent=`Upload failed: ${e.message}`}
+}
+async function load(){try{const d=await api("/api/bots");bots=d.bots;$("grid").innerHTML=bots.map(b=>`<div class="card"><h3>${esc(b.name)}</h3><div class="status"><span class="dot ${b.running?"on":""}"></span>${b.running?"Running":"Stopped"} · ${b.hasPackage?"package.json":"No package.json"} · ${b.hasEnv?".env":"No .env"}</div><small>Start: ${esc(b.startScript||b.main||"auto-detect")}</small><div class="actions" style="margin-top:16px"><button onclick="deploy('${esc(b.name)}')">Deploy</button><button class="secondary" onclick="stopBot('${esc(b.name)}')">Stop</button><button class="secondary" onclick="restartBot('${esc(b.name)}')">Restart</button><button class="secondary" onclick="editEnv('${esc(b.name)}')">.env</button><button class="secondary" onclick="showLogs('${esc(b.name)}')">Logs</button></div></div>`).join("")||`<div class="card"><h3>No bots yet</h3><div class="muted">Drop a complete bot folder above or place one in the bots folder.</div></div>`}catch(e){console.error(e)}}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function editEnv(name){current=name;$("modalTitle").textContent=name+" — .env";$("modal").classList.add("show");$("env").style.display="block";const d=await api("/api/bots/"+encodeURIComponent(name)+"/env");$("env").value=d.text;startLogs()}
+async function saveEnv(){try{await api("/api/bots/"+encodeURIComponent(current)+"/env",{method:"PUT",body:JSON.stringify({text:$("env").value})});toast(".env saved")}catch(e){alert(e.message)}}
+async function deploy(name){try{toast("Installing dependencies and starting bot...");const d=await api("/api/bots/"+encodeURIComponent(name)+"/deploy",{method:"POST"});toast("Deployed · PID "+d.pid);await load();showLogs(name)}catch(e){alert(e.message);await load()}}
+async function deployCurrent(){if(current)await deploy(current)}
+async function stopBot(name){try{await api("/api/bots/"+encodeURIComponent(name)+"/stop",{method:"POST"});toast("Bot stopped");await load()}catch(e){alert(e.message)}}
+async function restartBot(name){try{toast("Restarting bot...");const d=await api("/api/bots/"+encodeURIComponent(name)+"/restart",{method:"POST"});toast("Restarted · PID "+d.pid);await load();showLogs(name)}catch(e){alert(e.message);await load()}}
+async function restartCurrent(){if(current)await restartBot(current)}
+async function showLogs(name){current=name;$("modalTitle").textContent=name+" — logs";$("modal").classList.add("show");$("env").style.display="none";startLogs()}
+function closeModal(){clearInterval(timer);timer=null;$("modal").classList.remove("show");$("env").style.display="block";current=null}
+function startLogs(){clearInterval(timer);updateLogs();timer=setInterval(updateLogs,1000)}
+async function updateLogs(){if(!current)return;try{const d=await api("/api/bots/"+encodeURIComponent(current)+"/logs");$("logs").textContent=d.logs.join("\n")||"No logs yet.";$("logs").scrollTop=$("logs").scrollHeight}catch{}}
+load();setInterval(load,4000);
+</script>
+</body></html>
